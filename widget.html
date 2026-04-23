@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NZEB Airflow Calculator — TGD Part F</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* ===== DESIGN TOKENS ===== */
+:root, [data-theme="light"] {
+  --color-bg: #f7f6f2;
+  --color-surface: #f9f8f5;
+  --color-surface-2: #fbfbf9;
+  --color-surface-offset: #f0ede8;
+  --color-divider: #dcd9d5;
+  --color-border: #d4d1ca;
+  --color-text: #28251d;
+  --color-text-muted: #7a7974;
+  --color-text-faint: #bab9b4;
+  --color-primary: #01696f;
+  --color-primary-hover: #0c4e54;
+  --color-primary-highlight: #cedcd8;
+  --color-success: #437a22;
+  --color-success-highlight: #d4dfcc;
+  --color-warning: #964219;
+  --color-warning-highlight: #ddcfc6;
+  --color-error: #a12c7b;
+  --color-error-highlight: #e0ced7;
+  --color-gold: #d19900;
+  --color-gold-highlight: #e9e0c6;
+  --shadow-sm: 0 1px 3px oklch(0.2 0.01 80 / 0.07);
+  --shadow-md: 0 4px 16px oklch(0.2 0.01 80 / 0.10);
+  --shadow-lg: 0 12px 40px oklch(0.2 0.01 80 / 0.14);
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-full: 9999px;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+  --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+  --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+  --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
+  --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem; --space-4: 1rem;
+  --space-5: 1.25rem; --space-6: 1.5rem; --space-8: 2rem; --space-10: 2.5rem;
+  --space-12: 3rem; --space-16: 4rem;
+  --transition: 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-theme="dark"] {
+  --color-bg: #141412;
+  --color-surface: #1a1917;
+  --color-surface-2: #1f1e1c;
+  --color-surface-offset: #252420;
+  --color-divider: #2a2926;
+  --color-border: #333230;
+  --color-text: #d4d3cf;
+  --color-text-muted: #7a7876;
+  --color-text-faint: #4e4d4b;
+  --color-primary: #3d9099;
+  --color-primary-hover: #2f7880;
+  --color-primary-highlight: #1e3235;
+  --color-success: #5d9a38;
+  --color-success-highlight: #1e3015;
+  --color-warning: #c96b35;
+  --color-warning-highlight: #3a2518;
+  --color-error: #c95fa0;
+  --color-error-highlight: #3a1a30;
+  --color-gold: #d4a820;
+  --color-gold-highlight: #2e2610;
+  --shadow-sm: 0 1px 3px oklch(0 0 0 / 0.25);
+  --shadow-md: 0 4px 16px oklch(0 0 0 / 0.35);
+  --shadow-lg: 0 12px 40px oklch(0 0 0 / 0.5);
+}
+
+/* ===== BASE ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  color: var(--color-text);
+  background: var(--color-bg);
+  min-height: 100dvh;
+  line-height: 1.6;
+}
+input, select, button { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: none; }
+
+/* ===== LAYOUT ===== */
+.app-header {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4) var(--space-6);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+}
+.header-brand { display: flex; align-items: center; gap: var(--space-3); }
+.header-logo {
+  width: 36px; height: 36px; flex-shrink: 0;
+}
+.header-title { font-size: var(--text-base); font-weight: 600; line-height: 1.2; }
+.header-subtitle { font-size: var(--text-xs); color: var(--color-text-muted); }
+.header-actions { display: flex; gap: var(--space-2); align-items: center; }
+
+.main { max-width: 1100px; margin: 0 auto; padding: var(--space-8) var(--space-6); display: flex; flex-direction: column; gap: var(--space-6); }
+
+/* ===== CARDS ===== */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.card-header {
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--color-divider);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+}
+.card-header-left { display: flex; align-items: center; gap: var(--space-3); }
+.step-badge {
+  width: 28px; height: 28px; border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #fff; font-size: var(--text-xs); font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.card-title { font-size: var(--text-base); font-weight: 600; }
+.card-subtitle { font-size: var(--text-xs); color: var(--color-text-muted); margin-top: 1px; }
+.card-body { padding: var(--space-6); }
+
+/* ===== GRID INPUTS ===== */
+.input-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-4); }
+.input-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.input-label { font-size: var(--text-xs); font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.input-wrapper { position: relative; }
+.input-field {
+  width: 100%; padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  transition: border-color var(--transition), box-shadow var(--transition);
+  appearance: none;
+}
+.input-field:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-primary) 20%, transparent); }
+.input-unit {
+  position: absolute; right: var(--space-3); top: 50%; transform: translateY(-50%);
+  font-size: var(--text-xs); color: var(--color-text-faint); font-family: var(--font-mono); pointer-events: none;
+}
+select.input-field { padding-right: var(--space-8); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
+
+/* ===== OCCUPANCY DISPLAY ===== */
+.occupancy-display {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-primary-highlight);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  color: var(--color-primary);
+  font-family: var(--font-mono);
+  margin-top: var(--space-2);
+}
+
+/* ===== RESULTS ROW ===== */
+.results-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--space-3); margin-top: var(--space-5); }
+.result-chip {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  display: flex; flex-direction: column; gap: var(--space-1);
+}
+.result-chip.primary { background: var(--color-primary-highlight); border: 1px solid color-mix(in oklch, var(--color-primary) 30%, transparent); }
+.result-chip.success { background: var(--color-success-highlight); border: 1px solid color-mix(in oklch, var(--color-success) 30%, transparent); }
+.result-chip.warning { background: var(--color-warning-highlight); border: 1px solid color-mix(in oklch, var(--color-warning) 30%, transparent); }
+.result-chip.gold { background: var(--color-gold-highlight); border: 1px solid color-mix(in oklch, var(--color-gold) 30%, transparent); }
+.result-chip-label { font-size: var(--text-xs); color: var(--color-text-muted); font-weight: 500; }
+.result-chip-value { font-size: var(--text-lg); font-weight: 700; font-family: var(--font-mono); color: var(--color-text); line-height: 1.1; }
+.result-chip-value span { font-size: var(--text-xs); font-weight: 400; color: var(--color-text-muted); }
+.result-chip-note { font-size: var(--text-xs); color: var(--color-text-muted); margin-top: 1px; }
+
+/* ===== WET ROOMS TABLE ===== */
+.rooms-table { width: 100%; border-collapse: collapse; }
+.rooms-table th {
+  text-align: left; padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs); font-weight: 600; color: var(--color-text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--color-divider);
+}
+.rooms-table td { padding: var(--space-2) var(--space-3); font-size: var(--text-sm); vertical-align: middle; }
+.rooms-table tr:not(:last-child) td { border-bottom: 1px solid var(--color-divider); }
+.rooms-table tr:last-child td { font-weight: 600; background: var(--color-surface-offset); }
+.calc-value { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-primary); font-weight: 600; }
+.formula-hint { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-faint); }
+.type-badge {
+  display: inline-block; padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs); font-weight: 600;
+  background: var(--color-surface-offset); color: var(--color-text-muted);
+}
+.boost-val { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-muted); }
+
+.btn-add-room {
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border: 1.5px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm); color: var(--color-text-muted);
+  width: 100%; text-align: center;
+  transition: all var(--transition);
+}
+.btn-add-room:hover { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-highlight); }
+.btn-remove {
+  padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm);
+  font-size: var(--text-xs); color: var(--color-text-faint);
+  transition: all var(--transition);
+}
+.btn-remove:hover { color: var(--color-error); background: var(--color-error-highlight); }
+
+/* ===== SUPPLY ROOMS ===== */
+.supply-grid { display: grid; gap: 0; }
+.supply-row {
+  display: grid;
+  grid-template-columns: 1fr 100px 100px 90px 110px 40px;
+  gap: var(--space-3); align-items: center;
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--color-divider);
+}
+.supply-row.header-row {
+  background: var(--color-surface-offset);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+.supply-row.header-row span { font-size: var(--text-xs); font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.supply-row.total-row { background: var(--color-surface-offset); font-weight: 600; border-bottom: none; border-radius: 0 0 var(--radius-md) var(--radius-md); }
+.supply-input { padding: var(--space-2) var(--space-3); background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-size: var(--text-sm); width: 100%; transition: border-color var(--transition); }
+.supply-input:focus { outline: none; border-color: var(--color-primary); }
+.supply-calc { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-primary); font-weight: 600; }
+
+/* ===== SUMMARY CARD ===== */
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+.summary-section { display: flex; flex-direction: column; gap: var(--space-3); }
+.summary-section-title { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); padding-bottom: var(--space-2); border-bottom: 1px solid var(--color-divider); }
+.summary-line { display: flex; justify-content: space-between; align-items: center; font-size: var(--text-sm); gap: var(--space-4); }
+.summary-line .label { color: var(--color-text-muted); }
+.summary-line .value { font-family: var(--font-mono); font-weight: 600; }
+.summary-line.highlight .value { color: var(--color-primary); font-size: var(--text-base); }
+.machine-capacity-box {
+  grid-column: 1 / -1;
+  background: var(--color-primary-highlight);
+  border: 2px solid color-mix(in oklch, var(--color-primary) 40%, transparent);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-6);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+}
+.machine-capacity-label { font-size: var(--text-sm); color: var(--color-text-muted); font-weight: 500; }
+.machine-capacity-value { font-size: var(--text-xl); font-family: var(--font-mono); font-weight: 700; color: var(--color-primary); }
+.boost-status {
+  grid-column: 1 / -1;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm); font-weight: 500;
+  display: flex; align-items: center; gap: var(--space-3);
+}
+.boost-status.ok { background: var(--color-success-highlight); color: var(--color-success); }
+.boost-status.req { background: var(--color-warning-highlight); color: var(--color-warning); }
+.balance-status {
+  grid-column: 1 / -1;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm); font-weight: 500;
+  display: flex; align-items: center; gap: var(--space-3);
+}
+.balance-status.ok { background: var(--color-success-highlight); color: var(--color-success); }
+.balance-status.warn { background: var(--color-warning-highlight); color: var(--color-warning); }
+
+/* ===== PROJECT INFO ===== */
+.project-bar {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5) var(--space-6);
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 160px;
+  gap: var(--space-4);
+}
+
+/* ===== BUTTONS ===== */
+.btn-primary {
+  padding: var(--space-3) var(--space-6);
+  background: var(--color-primary);
+  color: #fff; border-radius: var(--radius-md);
+  font-size: var(--text-sm); font-weight: 600;
+  transition: background var(--transition), box-shadow var(--transition);
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover { background: var(--color-primary-hover); box-shadow: var(--shadow-md); }
+.btn-ghost {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm); color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  transition: all var(--transition);
+}
+.btn-ghost:hover { color: var(--color-text); background: var(--color-surface-offset); }
+.btn-icon {
+  width: 36px; height: 36px; border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--color-border); color: var(--color-text-muted);
+  transition: all var(--transition);
+}
+.btn-icon:hover { color: var(--color-text); background: var(--color-surface-offset); }
+
+/* ===== PRINT ===== */
+.print-header { display: none; }
+@media print {
+  .app-header, .header-actions, .btn-add-room, .btn-remove, .no-print { display: none !important; }
+  .print-header { display: block; margin-bottom: 1.5rem; }
+  .print-header h1 { font-size: 1.4rem; font-weight: 700; }
+  .print-header p { font-size: 0.85rem; color: #666; }
+  body { background: #fff; color: #000; }
+  .card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
+  .main { padding: 0; }
+  [data-theme="dark"] { --color-bg: #fff; --color-surface: #fff; --color-surface-2: #f8f8f8; --color-surface-offset: #f0f0f0; --color-text: #000; --color-text-muted: #555; --color-primary: #01696f; --color-border: #ccc; --color-divider: #ddd; --color-primary-highlight: #e0f0f0; --color-success: #437a22; --color-success-highlight: #e8f5e0; }
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .project-bar { grid-template-columns: 1fr 1fr; }
+  .summary-grid { grid-template-columns: 1fr; }
+  .main { padding: var(--space-4); gap: var(--space-4); }
+  .supply-row { grid-template-columns: 1fr 80px 80px 75px; }
+  .supply-row > *:nth-child(5), .supply-row > *:nth-child(6) { display: none; }
+}
+@media (max-width: 480px) {
+  .project-bar { grid-template-columns: 1fr; }
+  .input-grid { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-brand">
+    <svg class="header-logo" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Eco Vent Logo">
+      <rect width="36" height="36" rx="8" fill="var(--color-primary)"/>
+      <circle cx="18" cy="18" r="7" stroke="#fff" stroke-width="2" fill="none"/>
+      <path d="M18 11 L18 7 M18 25 L18 29 M11 18 L7 18 M25 18 L29 18" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M13.5 13.5 L10.8 10.8 M22.5 22.5 L25.2 25.2 M22.5 13.5 L25.2 10.8 M13.5 22.5 L10.8 25.2" stroke="rgba(255,255,255,0.5)" stroke-width="1" stroke-linecap="round"/>
+      <circle cx="18" cy="18" r="3" fill="#fff" opacity="0.9"/>
+    </svg>
+    <div>
+      <div class="header-title">NZEB Airflow Calculator</div>
+      <div class="header-subtitle">TGD Part F — Ireland</div>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="btn-icon" onclick="window.print()" title="Print / Export PDF">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+    </button>
+    <button class="btn-icon" data-theme-toggle title="Toggle dark/light mode">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+    <button class="btn-ghost no-print" onclick="saveToCreator()" style="color:var(--color-primary);border-color:var(--color-primary);">⬆ Save to Creator</button>
+    <button class="btn-primary no-print" onclick="resetAll()">New Project</button>
+  </div>
+</header>
+
+<main class="main">
+
+  <!-- Print Header -->
+  <div class="print-header">
+    <h1>NZEB Ventilation Calculation Report — TGD Part F</h1>
+    <p id="print-info"></p>
+  </div>
+
+  <!-- PROJECT INFO -->
+  <div class="project-bar">
+    <div class="input-group">
+      <label class="input-label" for="proj-client">Client Name</label>
+      <input class="input-field" id="proj-client" type="text" placeholder="e.g. Murphy Family" oninput="updatePrintInfo()">
+    </div>
+    <div class="input-group">
+      <label class="input-label" for="proj-addr">Project Address</label>
+      <input class="input-field" id="proj-addr" type="text" placeholder="e.g. 14 Oak Drive, Laois" oninput="updatePrintInfo()">
+    </div>
+    <div class="input-group">
+      <label class="input-label" for="proj-system">System Type</label>
+      <select class="input-field" id="proj-system" onchange="updateSystemType(); calculate()">
+        <option value="MVHR">MVHR (Balanced)</option>
+        <option value="CMEV">CMEV (Extract Only)</option>
+      </select>
+    </div>
+    <div class="input-group">
+      <label class="input-label" for="proj-ref">Project Ref</label>
+      <input class="input-field" id="proj-ref" type="text" placeholder="EV-2026-001" oninput="updatePrintInfo()">
+    </div>
+  </div>
+
+  <!-- STEP 1: GVR -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-header-left">
+        <div class="step-badge">1</div>
+        <div>
+          <div class="card-title">General Ventilation Rate (GVR)</div>
+          <div class="card-subtitle">TGD F §1.2.2.2 — Greater of Method A (Occupancy) or Method B (Floor Area)</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="input-grid">
+        <div class="input-group">
+          <label class="input-label" for="floor-area">Internal Floor Area</label>
+          <div class="input-wrapper">
+            <input class="input-field" id="floor-area" type="number" min="20" max="500" value="122" oninput="calculate()" style="padding-right:3rem">
+            <span class="input-unit">m²</span>
+          </div>
+        </div>
+        <div class="input-group">
+          <label class="input-label" for="bedrooms">Number of Bedrooms</label>
+          <select class="input-field" id="bedrooms" onchange="calculate()">
+            <option value="1">1 Bedroom</option>
+            <option value="2">2 Bedrooms</option>
+            <option value="3" selected>3 Bedrooms</option>
+            <option value="4">4 Bedrooms</option>
+            <option value="5">5 Bedrooms</option>
+            <option value="6">6 Bedrooms</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label class="input-label" for="ceiling-h">Ceiling Height</label>
+          <div class="input-wrapper">
+            <input class="input-field" id="ceiling-h" type="number" min="2.0" max="4.0" step="0.1" value="2.4" oninput="calculate()" style="padding-right:2.5rem">
+            <span class="input-unit">m</span>
+          </div>
+        </div>
+      </div>
+      <div class="occupancy-display" id="occupancy-display">
+        Occupants: 5 total — Bedroom 1: 2, Bedroom 2: 2, Bedroom 3: 1
+      </div>
+      <div class="results-row">
+        <div class="result-chip primary">
+          <span class="result-chip-label">Method A — Occupancy</span>
+          <span class="result-chip-value" id="gvr-a">25.0 <span>l/s</span></span>
+          <span class="result-chip-note" id="gvr-a-formula">5 + 4×5 = 25</span>
+        </div>
+        <div class="result-chip primary">
+          <span class="result-chip-label">Method B — Floor Area</span>
+          <span class="result-chip-value" id="gvr-b">36.6 <span>l/s</span></span>
+          <span class="result-chip-note" id="gvr-b-formula">0.3 × 122m² = 36.6</span>
+        </div>
+        <div class="result-chip gold">
+          <span class="result-chip-label">✓ GVR (Greater Of)</span>
+          <span class="result-chip-value" id="gvr-result">36.6 <span>l/s</span></span>
+          <span class="result-chip-note" id="gvr-method">Method B selected</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2: WET ROOMS EXTRACT -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-header-left">
+        <div class="step-badge">2</div>
+        <div>
+          <div class="card-title">Wet Room Extract Rates</div>
+          <div class="card-subtitle">TGD F Table 1 — Minimum boost rates and proportional general extract per room</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <table class="rooms-table" id="wet-rooms-table">
+        <thead>
+          <tr>
+            <th>Room Name</th>
+            <th>Type</th>
+            <th>Min Boost <span style="font-weight:400">(TGD F T1)</span></th>
+            <th>General Extract <span style="font-weight:400">(l/s)</span></th>
+            <th>Formula</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="wet-rooms-body"></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2"><strong>TOTALS</strong></td>
+            <td><span class="calc-value" id="omber-total">—</span> <span style="font-size:var(--text-xs);color:var(--color-text-muted)">l/s (OMBER)</span></td>
+            <td><span class="calc-value" id="extract-total">—</span> <span style="font-size:var(--text-xs);color:var(--color-text-muted)">l/s</span></td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+      <button class="btn-add-room no-print" onclick="addWetRoom()">+ Add wet room</button>
+    </div>
+  </div>
+
+  <!-- STEP 3: SUPPLY ROOMS (MVHR only) -->
+  <div class="card" id="supply-card">
+    <div class="card-header">
+      <div class="card-header-left">
+        <div class="step-badge">3</div>
+        <div>
+          <div class="card-title">Habitable Room Supply Rates</div>
+          <div class="card-subtitle">MVHR — Supply airflow proportional to room volume (TGD F §1.2.2)</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="supply-grid">
+        <div class="supply-row header-row">
+          <span>Room Name</span>
+          <span>Area (m²)</span>
+          <span>Height (m)</span>
+          <span>Volume (m³)</span>
+          <span>Supply (l/s)</span>
+          <span></span>
+        </div>
+        <div id="supply-rows-body"></div>
+        <div class="supply-row total-row" id="supply-total-row">
+          <span>TOTAL</span>
+          <span id="supply-total-area">—</span>
+          <span></span>
+          <span id="supply-total-volume" class="calc-value">—</span>
+          <span id="supply-total-flow" class="calc-value">—</span>
+          <span></span>
+        </div>
+      </div>
+      <button class="btn-add-room no-print" onclick="addSupplyRoom()">+ Add habitable room</button>
+    </div>
+  </div>
+
+  <!-- STEP 4: SUMMARY -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-header-left">
+        <div class="step-badge">4</div>
+        <div>
+          <div class="card-title">System Summary &amp; Machine Capacity</div>
+          <div class="card-subtitle">TGD F §1.2.2.3 — Final system sizing</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="summary-grid">
+        <div class="summary-section">
+          <div class="summary-section-title">General Ventilation</div>
+          <div class="summary-line">
+            <span class="label">GVR (occupancy method)</span>
+            <span class="value" id="sum-gvr-a">— l/s</span>
+          </div>
+          <div class="summary-line">
+            <span class="label">GVR (floor area method)</span>
+            <span class="value" id="sum-gvr-b">— l/s</span>
+          </div>
+          <div class="summary-line highlight">
+            <span class="label">General Ventilation Rate</span>
+            <span class="value" id="sum-gvr">— l/s</span>
+          </div>
+        </div>
+        <div class="summary-section">
+          <div class="summary-section-title">Capacity Calculation</div>
+          <div class="summary-line">
+            <span class="label">Method 1 — OMBER (TGD F T1)</span>
+            <span class="value" id="sum-omber">— l/s</span>
+          </div>
+          <div class="summary-line">
+            <span class="label">Method 2 — GVR × 1.25</span>
+            <span class="value" id="sum-gvr125">— l/s</span>
+          </div>
+          <div class="summary-line highlight">
+            <span class="label">Min Machine Capacity</span>
+            <span class="value" id="sum-capacity">— l/s</span>
+          </div>
+        </div>
+        <div class="machine-capacity-box">
+          <div>
+            <div class="machine-capacity-label">Minimum Machine Capacity Required</div>
+            <div style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:2px">Greater of OMBER or GVR×1.25 — TGD F §1.2.2.3</div>
+          </div>
+          <div class="machine-capacity-value" id="sum-capacity-big">— l/s</div>
+        </div>
+        <div class="boost-status" id="boost-status">
+          <span>—</span>
+        </div>
+        <div class="balance-status" id="balance-status" style="display:none">
+          <span>—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ===== STATE =====
+let wetRooms = [
+  { name: 'Kitchen', type: 'Kitchen' },
+  { name: 'WC', type: 'Sanitary' },
+  { name: 'Bathroom 1', type: 'Bathroom' },
+  { name: 'Ensuite', type: 'Bathroom' },
+];
+
+let supplyRooms = [
+  { name: 'Living Room', area: 19.5, height: 2.4 },
+  { name: 'Dining Room', area: 10.0, height: 2.4 },
+  { name: 'Bedroom 1', area: 14.8, height: 2.4 },
+  { name: 'Bedroom 2', area: 12.0, height: 2.4 },
+  { name: 'Bedroom 3', area: 10.0, height: 2.4 },
+];
+
+const BOOST_RATES = { Kitchen: 13, Utility: 8, Bathroom: 8, Sanitary: 6 };
+const TYPE_OPTIONS = ['Kitchen', 'Utility', 'Bathroom', 'Sanitary'];
+
+// ===== OCCUPANCY =====
+function calcOccupants(beds) {
+  beds = parseInt(beds);
+  if (beds <= 0) return 0;
+  if (beds === 1) return 2;
+  if (beds === 2) return 4;
+  return 4 + (beds - 2);
+}
+
+function occupancyBreakdown(beds) {
+  beds = parseInt(beds);
+  let parts = [];
+  if (beds >= 1) parts.push('Bed 1: 2');
+  if (beds >= 2) parts.push('Bed 2: 2');
+  for (let i = 3; i <= beds; i++) parts.push('Bed ' + i + ': 1');
+  let total = calcOccupants(beds);
+  return 'Occupants: ' + total + ' total — ' + parts.join(', ');
+}
+
+// ===== RENDER WET ROOMS =====
+function renderWetRooms() {
+  const tbody = document.getElementById('wet-rooms-body');
+  tbody.innerHTML = '';
+  wetRooms.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    const typeOpts = TYPE_OPTIONS.map(t =>
+      `<option value="${t}" ${t === r.type ? 'selected' : ''}>${t}</option>`
+    ).join('');
+    tr.innerHTML = `
+      <td><input class="supply-input" style="width:100%" value="${r.name}" oninput="wetRooms[${i}].name=this.value" placeholder="Room name"></td>
+      <td>
+        <select class="supply-input" style="width:100%" onchange="wetRooms[${i}].type=this.value; calculate()">
+          ${typeOpts}
+        </select>
+      </td>
+      <td><span class="boost-val">${BOOST_RATES[r.type] || 0} l/s</span></td>
+      <td><span class="calc-value" id="wet-extract-${i}">—</span></td>
+      <td><span class="formula-hint" id="wet-formula-${i}">—</span></td>
+      <td><button class="btn-remove no-print" onclick="removeWetRoom(${i})" title="Remove">✕</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ===== RENDER SUPPLY ROOMS =====
+function renderSupplyRooms() {
+  const container = document.getElementById('supply-rows-body');
+  container.innerHTML = '';
+  supplyRooms.forEach((r, i) => {
+    const div = document.createElement('div');
+    div.className = 'supply-row';
+    div.innerHTML = `
+      <input class="supply-input" value="${r.name}" placeholder="Room name" oninput="supplyRooms[${i}].name=this.value">
+      <input class="supply-input" type="number" min="1" max="200" step="0.5" value="${r.area}" oninput="supplyRooms[${i}].area=parseFloat(this.value)||0; calculate()">
+      <input class="supply-input" type="number" min="2.0" max="5.0" step="0.1" value="${r.height}" oninput="supplyRooms[${i}].height=parseFloat(this.value)||2.4; calculate()">
+      <span class="supply-calc" id="supply-vol-${i}">—</span>
+      <span class="supply-calc" id="supply-flow-${i}">—</span>
+      <button class="btn-remove no-print" onclick="removeSupplyRoom(${i})" title="Remove">✕</button>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function addWetRoom() {
+  wetRooms.push({ name: 'Bathroom ' + (wetRooms.length), type: 'Bathroom' });
+  renderWetRooms();
+  calculate();
+}
+function removeWetRoom(i) {
+  if (wetRooms.length <= 1) return;
+  wetRooms.splice(i, 1);
+  renderWetRooms();
+  calculate();
+}
+function addSupplyRoom() {
+  supplyRooms.push({ name: 'Room ' + (supplyRooms.length + 1), area: 12.0, height: 2.4 });
+  renderSupplyRooms();
+  calculate();
+}
+function removeSupplyRoom(i) {
+  if (supplyRooms.length <= 1) return;
+  supplyRooms.splice(i, 1);
+  renderSupplyRooms();
+  calculate();
+}
+
+// ===== MAIN CALCULATE =====
+function calculate() {
+  const floorArea = parseFloat(document.getElementById('floor-area').value) || 0;
+  const beds = parseInt(document.getElementById('bedrooms').value) || 1;
+  const system = document.getElementById('proj-system').value;
+
+  // Occupancy
+  const occupants = calcOccupants(beds);
+  document.getElementById('occupancy-display').textContent = occupancyBreakdown(beds);
+
+  // GVR
+  const gvrA = 5 + 4 * occupants;
+  const gvrB = 0.3 * floorArea;
+  const gvr = Math.max(gvrA, gvrB);
+  const gvrMethod = gvrA >= gvrB ? 'Method A selected' : 'Method B selected';
+
+  document.getElementById('gvr-a').innerHTML = gvrA.toFixed(1) + ' <span>l/s</span>';
+  document.getElementById('gvr-a-formula').textContent = '5 + 4×' + occupants + ' = ' + gvrA.toFixed(1);
+  document.getElementById('gvr-b').innerHTML = gvrB.toFixed(1) + ' <span>l/s</span>';
+  document.getElementById('gvr-b-formula').textContent = '0.3 × ' + floorArea + 'm² = ' + gvrB.toFixed(1);
+  document.getElementById('gvr-result').innerHTML = gvr.toFixed(1) + ' <span>l/s</span>';
+  document.getElementById('gvr-method').textContent = gvrMethod;
+
+  // WET ROOMS
+  let omber = 0;
+  wetRooms.forEach(r => { omber += BOOST_RATES[r.type] || 0; });
+
+  let extractTotal = 0;
+  wetRooms.forEach((r, i) => {
+    const boost = BOOST_RATES[r.type] || 0;
+    const extract = omber > 0 ? (gvr * boost) / omber : 0;
+    extractTotal += extract;
+    const el = document.getElementById('wet-extract-' + i);
+    const fel = document.getElementById('wet-formula-' + i);
+    if (el) el.textContent = extract.toFixed(2);
+    if (fel) fel.textContent = gvr.toFixed(1) + '×' + boost + '÷' + omber.toFixed(0);
+  });
+
+  document.getElementById('omber-total').textContent = omber.toFixed(0);
+  document.getElementById('extract-total').textContent = extractTotal.toFixed(2);
+
+  // SUPPLY ROOMS
+  let totalVol = 0;
+  supplyRooms.forEach(r => {
+    totalVol += (r.area || 0) * (r.height || 2.4);
+  });
+
+  let supplyTotal = 0;
+  let totalArea = 0;
+  supplyRooms.forEach((r, i) => {
+    const vol = (r.area || 0) * (r.height || 2.4);
+    const flow = totalVol > 0 ? (gvr * vol) / totalVol : 0;
+    supplyTotal += flow;
+    totalArea += r.area || 0;
+    const ve = document.getElementById('supply-vol-' + i);
+    const fe = document.getElementById('supply-flow-' + i);
+    if (ve) ve.textContent = vol.toFixed(1) + ' m³';
+    if (fe) fe.textContent = flow.toFixed(2) + ' l/s';
+  });
+
+  document.getElementById('supply-total-area').textContent = totalArea.toFixed(1) + ' m²';
+  document.getElementById('supply-total-volume').textContent = totalVol.toFixed(1) + ' m³';
+  document.getElementById('supply-total-flow').textContent = supplyTotal.toFixed(2) + ' l/s';
+
+  // CAPACITY
+  const gvr125 = gvr * 1.25;
+  const capacity = Math.max(omber, gvr125);
+  const capacityMethod = omber >= gvr125 ? 'OMBER governs' : 'GVR×1.25 governs';
+
+  document.getElementById('sum-gvr-a').textContent = gvrA.toFixed(1) + ' l/s';
+  document.getElementById('sum-gvr-b').textContent = gvrB.toFixed(1) + ' l/s';
+  document.getElementById('sum-gvr').textContent = gvr.toFixed(1) + ' l/s';
+  document.getElementById('sum-omber').textContent = omber.toFixed(1) + ' l/s';
+  document.getElementById('sum-gvr125').textContent = gvr125.toFixed(2) + ' l/s';
+  document.getElementById('sum-capacity').textContent = capacity.toFixed(2) + ' l/s';
+  document.getElementById('sum-capacity-big').textContent = capacity.toFixed(1) + ' l/s';
+
+  // Boost status
+  const boostEl = document.getElementById('boost-status');
+  if (gvr >= omber) {
+    boostEl.className = 'boost-status ok';
+    boostEl.innerHTML = '<span>✅ No boost facility required — GVR (' + gvr.toFixed(1) + ' l/s) ≥ OMBER (' + omber + ' l/s) — TGD F §1.2.2.2</span>';
+  } else {
+    boostEl.className = 'boost-status req';
+    boostEl.innerHTML = '<span>⚠️ Boost required — GVR (' + gvr.toFixed(1) + ' l/s) < OMBER (' + omber + ' l/s) — each wet room needs boost facility</span>';
+  }
+
+  // Balance (MVHR only)
+  const balanceEl = document.getElementById('balance-status');
+  if (system === 'MVHR') {
+    balanceEl.style.display = 'flex';
+    const diff = Math.abs(supplyTotal - extractTotal);
+    if (diff < 0.5) {
+      balanceEl.className = 'balance-status ok';
+      balanceEl.innerHTML = '<span>✅ System balanced — Supply (' + supplyTotal.toFixed(2) + ' l/s) ≈ Extract (' + extractTotal.toFixed(2) + ' l/s)</span>';
+    } else {
+      balanceEl.className = 'balance-status warn';
+      balanceEl.innerHTML = '<span>⚠️ Check balance — Supply: ' + supplyTotal.toFixed(2) + ' l/s / Extract: ' + extractTotal.toFixed(2) + ' l/s / Diff: ' + diff.toFixed(2) + ' l/s</span>';
+    }
+  } else {
+    balanceEl.style.display = 'none';
+  }
+}
+
+function updateSystemType() {
+  const sys = document.getElementById('proj-system').value;
+  document.getElementById('supply-card').style.display = sys === 'MVHR' ? '' : 'none';
+}
+
+function updatePrintInfo() {
+  const client = document.getElementById('proj-client').value;
+  const addr = document.getElementById('proj-addr').value;
+  const ref = document.getElementById('proj-ref').value;
+  const sys = document.getElementById('proj-system').value;
+  const date = new Date().toLocaleDateString('en-IE');
+  document.getElementById('print-info').textContent =
+    [client, addr, ref, sys, 'Date: ' + date].filter(Boolean).join(' | ');
+}
+
+function resetAll() {
+  if (!confirm('Start a new project? Current data will be cleared.')) return;
+  document.getElementById('proj-client').value = '';
+  document.getElementById('proj-addr').value = '';
+  document.getElementById('proj-ref').value = '';
+  document.getElementById('floor-area').value = 100;
+  document.getElementById('bedrooms').value = 3;
+  document.getElementById('ceiling-h').value = 2.4;
+  wetRooms = [
+    { name: 'Kitchen', type: 'Kitchen' },
+    { name: 'Bathroom 1', type: 'Bathroom' },
+  ];
+  supplyRooms = [
+    { name: 'Living Room', area: 20.0, height: 2.4 },
+    { name: 'Bedroom 1', area: 14.0, height: 2.4 },
+    { name: 'Bedroom 2', area: 12.0, height: 2.4 },
+  ];
+  renderWetRooms();
+  renderSupplyRooms();
+  calculate();
+}
+
+// ===== THEME TOGGLE =====
+(function(){
+  const t = document.querySelector('[data-theme-toggle]');
+  const r = document.documentElement;
+  let d = r.getAttribute('data-theme') || 'dark';
+  function setIcon(mode) {
+    if (!t) return;
+    t.innerHTML = mode === 'dark'
+      ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+      : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+    t.setAttribute('title', 'Switch to ' + (mode === 'dark' ? 'light' : 'dark') + ' mode');
+  }
+  setIcon(d);
+  if (t) t.addEventListener('click', () => {
+    d = d === 'dark' ? 'light' : 'dark';
+    r.setAttribute('data-theme', d);
+    setIcon(d);
+  });
+})();
+
+// ===== ZOHO CREATOR SDK =====
+var ZOHO_MODE = false;
+var jobId = null;
+
+function initZoho() {
+  if (typeof ZOHO === "undefined" || !ZOHO.CREATOR) return;
+  ZOHO_MODE = true;
+  ZOHO.CREATOR.init().then(function() {
+    try {
+      var p = ZOHO.CREATOR.UTIL.getQueryParams();
+      if (p.job_id)      jobId = p.job_id;
+      if (p.client_name) document.getElementById("proj-client").value = p.client_name;
+      if (p.project_ref)  document.getElementById("proj-ref").value   = p.project_ref;
+      if (p.address)      document.getElementById("proj-addr").value  = p.address;
+      if (p.floor_area)  { document.getElementById("floor-area").value = p.floor_area; calculate(); }
+      if (p.bedrooms)    { document.getElementById("bedrooms").value   = p.bedrooms;   calculate(); }
+    } catch(e) {}
+  }).catch(function(){});
+}
+
+function saveToCreator() {
+  if (!ZOHO_MODE) { alert("Save only works inside Zoho Creator."); return; }
+  var data = {
+    Client_Name:       document.getElementById("proj-client").value,
+    Project_Reference: document.getElementById("proj-ref").value,
+    Project_Address:   document.getElementById("proj-addr").value,
+    System_Type:       document.getElementById("proj-system").value,
+    Floor_Area:        parseFloat(document.getElementById("floor-area").value) || 0,
+    Bedrooms:          parseInt(document.getElementById("bedrooms").value) || 1,
+    GVR:               document.getElementById("sum-gvr").textContent.replace(" l/s",""),
+    OMBER:             document.getElementById("sum-omber").textContent.replace(" l/s",""),
+    Machine_Capacity:  document.getElementById("sum-capacity-big").textContent.replace(" l/s",""),
+    Wet_Rooms_JSON:    JSON.stringify(wetRooms),
+    Supply_Rooms_JSON: JSON.stringify(supplyRooms)
+  };
+  if (jobId) data.Ventilation_Jobs = jobId;
+  ZOHO.CREATOR.DATA.addRecord({
+    appName: "ecovent-pro",
+    formName: "Ventilation_Calculation",
+    data: data
+  }).then(function(r) {
+    showToast(r.code === 3000 ? "✅ Saved to Zoho Creator!" : "⚠️ Save failed: " + (r.message || "error"), r.code === 3000);
+  }).catch(function(e) { showToast("⚠️ " + e.message, false); });
+}
+
+function showToast(msg, ok) {
+  var t = document.createElement("div");
+  t.style.cssText = "position:fixed;bottom:24px;right:24px;z-index:9999;padding:12px 20px;border-radius:8px;font-weight:700;font-size:14px;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,.25);transition:opacity .3s;background:" + (ok ? "var(--color-success)" : "var(--color-warning)");
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(function(){ t.style.opacity="0"; setTimeout(function(){ t.remove(); }, 300); }, 3500);
+}
+
+// ===== INIT =====
+renderWetRooms();
+renderSupplyRooms();
+updateSystemType();
+calculate();
+</script>
+<script src="https://js.zohostatic.com/creator/widgets/version/2.0/widgetsdk.min.js" onload="initZoho()"></script>
+</body>
+</html>
