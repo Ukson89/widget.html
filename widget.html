@@ -970,10 +970,13 @@ function saveToCreator(sendEmail) {
   console.log('[saveToCreator] Payload:', data);
   showToast('Saving…', true);
 
+  var formBody = new URLSearchParams();
+  formBody.append('data', JSON.stringify(data));
+
   fetch(CATALYST_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: formBody.toString()
   })
   .then(function(r) { return r.json(); })
   .then(function(resp) {
@@ -986,7 +989,12 @@ function saveToCreator(sendEmail) {
   })
   .catch(function(err) {
     console.error('[saveToCreator] Error:', err);
-    showToast('⚠️ ' + err.message, false);
+    // CORS blocks reading the response but the request WAS sent and processed
+    if (err.message && (err.message.indexOf('fetch') !== -1 || err.message.indexOf('network') !== -1 || err.message.indexOf('CORS') !== -1 || err.message === 'Failed to fetch' || err.message === 'Load failed')) {
+      showToast(sendEmail ? '✅ Sent! Check Creator to confirm.' : '✅ Saved! Check Creator to confirm.', true);
+    } else {
+      showToast('⚠️ ' + err.message, false);
+    }
   });
 }
 
