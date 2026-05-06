@@ -365,8 +365,10 @@ select.input-field { padding-right: var(--space-8); background-image: url("data:
     <button class="btn-icon" data-theme-toggle title="Toggle dark/light mode">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
     </button>
-    <button class="btn-ghost no-print" onclick="saveToCreator()" style="color:var(--color-primary);border-color:var(--color-primary);">⬆ Save to Creator</button>
-    <button class="btn-primary no-print" onclick="resetAll()">New Project</button>
+    <button class="btn-icon no-print" onclick="showTokenDialog()" title="Set API Token">🔑</button>
+    <button class="btn-ghost no-print" onclick="saveToCreator(false)" style="color:var(--color-primary);border-color:var(--color-primary);">⬆ Save Report</button>
+    <button class="btn-primary no-print" onclick="saveToCreator(true)">📧 Save &amp; Email</button>
+    <button class="btn-ghost no-print" onclick="resetAll()">New Project</button>
   </div>
 </header>
 
@@ -398,6 +400,10 @@ select.input-field { padding-right: var(--space-8); background-image: url("data:
     <div class="input-group">
       <label class="input-label" for="proj-ref">Project Ref</label>
       <input class="input-field" id="proj-ref" type="text" placeholder="EV-2026-001" oninput="updatePrintInfo()">
+    </div>
+    <div class="input-group">
+      <label class="input-label" for="proj-email">Client Email</label>
+      <input class="input-field" id="proj-email" type="email" placeholder="client@example.com">
     </div>
   </div>
 
@@ -864,49 +870,155 @@ function resetAll() {
   });
 })();
 
-// ===== ZOHO CREATOR SDK =====
-var ZOHO_MODE = false;
+// ===== ZOHO CREATOR REST API =====
 var jobId = null;
+var API_TOKEN = localStorage.getItem('zoho_api_token') || '';
 
-function initZoho() {
-  if (typeof ZOHO === "undefined" || !ZOHO.CREATOR) return;
-  ZOHO_MODE = true;
-  ZOHO.CREATOR.init().then(function() {
-    try {
-      var p = ZOHO.CREATOR.UTIL.getQueryParams();
-      if (p.job_id)      jobId = p.job_id;
-      if (p.client_name) document.getElementById("proj-client").value = p.client_name;
-      if (p.project_ref)  document.getElementById("proj-ref").value   = p.project_ref;
-      if (p.address)      document.getElementById("proj-addr").value  = p.address;
-      if (p.floor_area)  { document.getElementById("floor-area").value = p.floor_area; calculate(); }
-      if (p.bedrooms)    { document.getElementById("bedrooms").value   = p.bedrooms;   calculate(); }
-    } catch(e) {}
-  }).catch(function(){});
+// Read params from URL query string
+(function readUrlParams() {
+  var params = new URLSearchParams(window.location.search);
+  if (params.get('access_token')) {
+    API_TOKEN = params.get('access_token');
+    localStorage.setItem('zoho_api_token', API_TOKEN);
+    // Clean URL without reloading
+    var clean = window.location.pathname;
+    window.history.replaceState({}, '', clean);
+    showToast('✅ Token refreshed!', true);
+  }
+  if (params.get('job_id'))      jobId = params.get('job_id');
+  if (params.get('client_name')) document.getElementById('proj-client').value = params.get('client_name');
+  if (params.get('address'))     document.getElementById('proj-addr').value   = params.get('address');
+  if (params.get('project_ref')) document.getElementById('proj-ref').value    = params.get('project_ref');
+  if (params.get('floor_area'))  { document.getElementById('floor-area').value = params.get('floor_area'); calculate(); }
+  if (params.get('bedrooms'))    { document.getElementById('bedrooms').value   = params.get('bedrooms');   calculate(); }
+})();
+
+function showTokenDialog() {
+  var tok = prompt('Paste your Zoho Creator API Token:\n(get it from api-console.zoho.eu → Self Client)', API_TOKEN);
+  if (tok !== null) {
+    API_TOKEN = tok.trim();
+    localStorage.setItem('zoho_api_token', API_TOKEN);
+    showToast(API_TOKEN ? '✅ Token saved!' : '⚠️ Token cleared', !!API_TOKEN);
+  }
 }
 
-function saveToCreator() {
-  if (!ZOHO_MODE) { alert("Save only works inside Zoho Creator."); return; }
+function saveToCreator(sendEmail) {
+  if (!API_TOKEN) {
+    showTokenDialog();
+    if (!API_TOKEN) return;
+  }
+
+  var clientEmail = document.getElementById('proj-email').value || '';
+  if (sendEmail && !clientEmail) {
+    alert('Please enter a Client Email before sending.');
+    return;
+  }
+
+  // Recalculate all values fresh
+  var floorArea  = parseFloat(document.getElementById('floor-area').value) || 0;
+  var beds       = parseInt(document.getElementById('bedrooms').value) || 1;
+  var system     = document.getElementById('proj-system').value;
+  var occupants  = calcOccupants(beds);
+  var gvrA       = 5 + 4 * occupants;
+  var gvrB       = 0.3 * floorArea;
+  var gvr        = Math.max(gvrA, gvrB);
+  var omber      = 0;
+  wetRooms.forEach(function(r) { omber += BOOST_RATES[r.type] || 0; });
+  var capacity   = Math.max(omber, gvr * 1.25);
+  var totalVol   = 0;
+  supplyRooms.forEach(function(r) { totalVol += (r.area || 0) * (r.height || 2.4); });
+
+  // Room type counters
+  var countKitchen  = wetRooms.filter(function(r){ return r.type === 'Kitchen';  }).length;
+  var countBath     = wetRooms.filter(function(r){ return r.type === 'Bathroom'; }).length;
+  var countUtility  = wetRooms.filter(function(r){ return r.type === 'Utility';  }).length;
+  var countSanitary = wetRooms.filter(function(r){ return r.type === 'Sanitary'; }).length;
+
+  // Room_Measurements grid (wet rooms)
+  var roomGrid = wetRooms.map(function(r) {
+    var boost   = BOOST_RATES[r.type] || 0;
+    var extract = omber > 0 ? parseFloat(((gvr * boost) / omber).toFixed(2)) : 0;
+    return {
+      Room_Type:            r.type === 'Sanitary' ? 'Sanitary WC' : r.type,
+      Min_Boost_Rate:       boost,
+      RequiredGeneral_Airflow: extract,
+      Measured_General_l_s: 0,
+      Measured_Boost_l_s:   0,
+      Pass_Fail:            ''
+    };
+  });
+
+  // Supply_Rooms grid
+  var supplyGrid = supplyRooms.map(function(r) {
+    var vol  = parseFloat(((r.area || 0) * (r.height || 2.4)).toFixed(1));
+    var flow = totalVol > 0 ? parseFloat(((gvr * vol) / totalVol).toFixed(2)) : 0;
+    return {
+      Room:                   r.name,
+      Volume_m3:              vol,
+      Required_General_Supply: flow,
+      Required_Boost_Supply:  0,
+      Measured_General_Supply: 0,
+      Measured_Boost_Supply:  0,
+      Pass_Fail:              ''
+    };
+  });
+
+  var today = new Date();
+  var dateStr = today.getFullYear() + '-'
+    + String(today.getMonth()+1).padStart(2,'0') + '-'
+    + String(today.getDate()).padStart(2,'0');
+
   var data = {
-    Client_Name:       document.getElementById("proj-client").value,
-    Project_Reference: document.getElementById("proj-ref").value,
-    Project_Address:   document.getElementById("proj-addr").value,
-    System_Type:       document.getElementById("proj-system").value,
-    Floor_Area:        parseFloat(document.getElementById("floor-area").value) || 0,
-    Bedrooms:          parseInt(document.getElementById("bedrooms").value) || 1,
-    GVR:               document.getElementById("sum-gvr").textContent.replace(" l/s",""),
-    OMBER:             document.getElementById("sum-omber").textContent.replace(" l/s",""),
-    Machine_Capacity:  document.getElementById("sum-capacity-big").textContent.replace(" l/s",""),
-    Wet_Rooms_JSON:    JSON.stringify(wetRooms),
-    Supply_Rooms_JSON: JSON.stringify(supplyRooms)
+    report_date:             dateStr,
+    Ventilation_System:      system,
+    Internal_Floor_Area_m2:  floorArea,
+    Nr_of_Bedrooms:          beds,
+    Number_of_Occupants:     occupants,
+    Number_of_Kitchens:      countKitchen,
+    Number_of_Bathrooms:     countBath,
+    Nr_of_Ensuites:          0,
+    Number_of_Utility_Rooms: countUtility,
+    Number_of_Sanitary_WC:   countSanitary,
+    GVR_Occupancy:           parseFloat(gvrA.toFixed(2)),
+    GVR_Floor_Area:          parseFloat(gvrB.toFixed(2)),
+    General_Ventilation_Rate: parseFloat(gvr.toFixed(2)),
+    Min_Boost_Extract_Rate:  parseFloat(omber.toFixed(2)),
+    Required_Total_Capacity: parseFloat(capacity.toFixed(2)),
+    Total_Volume_m3:         parseFloat(totalVol.toFixed(1)),
+    Room_Measurements:       roomGrid,
+    Supply_Rooms:            supplyGrid
   };
-  if (jobId) data.Ventilation_Jobs = jobId;
-  ZOHO.CREATOR.DATA.addRecord({
-    appName: "ecovent-pro",
-    formName: "Ventilation_Calculation",
-    data: data
-  }).then(function(r) {
-    showToast(r.code === 3000 ? "✅ Saved to Zoho Creator!" : "⚠️ Save failed: " + (r.message || "error"), r.code === 3000);
-  }).catch(function(e) { showToast("⚠️ " + e.message, false); });
+  if (jobId) data.job_id = jobId;
+
+  console.log('[saveToCreator] Payload:', data);
+  showToast('Saving…', true);
+
+  fetch('https://creator.zoho.eu/api/v2/ecovent/ecovent-pro/form/Commissioning_Report', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Zoho-oauthtoken ' + API_TOKEN,
+      'Content-Type':  'application/json'
+    },
+    body: JSON.stringify({ data: data })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(resp) {
+    console.log('[saveToCreator] Response:', resp);
+    if (resp.code === 3000) {
+      showToast(sendEmail ? '✅ Saved! Email will be sent to ' + clientEmail : '✅ Report saved to Creator!', true);
+    } else if (resp.code === 1004 || resp.code === 1401) {
+      API_TOKEN = '';
+      localStorage.removeItem('zoho_api_token');
+      showToast('⚠️ Token expired — please re-enter.', false);
+      setTimeout(showTokenDialog, 600);
+    } else {
+      showToast('⚠️ ' + (resp.message || JSON.stringify(resp).slice(0, 150)), false);
+    }
+  })
+  .catch(function(err) {
+    console.error('[saveToCreator] Error:', err);
+    showToast('⚠️ ' + err.message, false);
+  });
 }
 
 function showToast(msg, ok) {
@@ -923,6 +1035,5 @@ renderSupplyRooms();
 updateSystemType();
 calculate();
 </script>
-<script src="https://js.zohostatic.com/creator/widgets/version/2.0/widgetsdk.min.js" onload="initZoho()"></script>
 </body>
 </html>
