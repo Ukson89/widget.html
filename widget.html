@@ -365,7 +365,6 @@ select.input-field { padding-right: var(--space-8); background-image: url("data:
     <button class="btn-icon" data-theme-toggle title="Toggle dark/light mode">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
     </button>
-    <button class="btn-icon no-print" onclick="showTokenDialog()" title="Set API Token">🔑</button>
     <button class="btn-ghost no-print" onclick="saveToCreator(false)" style="color:var(--color-primary);border-color:var(--color-primary);">⬆ Save Report</button>
     <button class="btn-primary no-print" onclick="saveToCreator(true)">📧 Save &amp; Email</button>
     <button class="btn-ghost no-print" onclick="resetAll()">New Project</button>
@@ -870,21 +869,13 @@ function resetAll() {
   });
 })();
 
-// ===== ZOHO CREATOR REST API =====
+// ===== CATALYST SAVE =====
+var CATALYST_URL = 'https://zoho-solution-20112910787.development.catalystserverless.eu/airflow-save';
 var jobId = null;
-var API_TOKEN = localStorage.getItem('zoho_api_token') || '';
 
 // Read params from URL query string
 (function readUrlParams() {
   var params = new URLSearchParams(window.location.search);
-  if (params.get('access_token')) {
-    API_TOKEN = params.get('access_token');
-    localStorage.setItem('zoho_api_token', API_TOKEN);
-    // Clean URL without reloading
-    var clean = window.location.pathname;
-    window.history.replaceState({}, '', clean);
-    showToast('✅ Token refreshed!', true);
-  }
   if (params.get('job_id'))      jobId = params.get('job_id');
   if (params.get('client_name')) document.getElementById('proj-client').value = params.get('client_name');
   if (params.get('address'))     document.getElementById('proj-addr').value   = params.get('address');
@@ -893,21 +884,7 @@ var API_TOKEN = localStorage.getItem('zoho_api_token') || '';
   if (params.get('bedrooms'))    { document.getElementById('bedrooms').value   = params.get('bedrooms');   calculate(); }
 })();
 
-function showTokenDialog() {
-  var tok = prompt('Paste your Zoho Creator API Token:\n(get it from api-console.zoho.eu → Self Client)', API_TOKEN);
-  if (tok !== null) {
-    API_TOKEN = tok.trim();
-    localStorage.setItem('zoho_api_token', API_TOKEN);
-    showToast(API_TOKEN ? '✅ Token saved!' : '⚠️ Token cleared', !!API_TOKEN);
-  }
-}
-
 function saveToCreator(sendEmail) {
-  if (!API_TOKEN) {
-    showTokenDialog();
-    if (!API_TOKEN) return;
-  }
-
   var clientEmail = document.getElementById('proj-email').value || '';
   if (sendEmail && !clientEmail) {
     alert('Please enter a Client Email before sending.');
@@ -993,26 +970,18 @@ function saveToCreator(sendEmail) {
   console.log('[saveToCreator] Payload:', data);
   showToast('Saving…', true);
 
-  fetch('https://creator.zoho.eu/api/v2/ecovent/ecovent-pro/form/Commissioning_Report', {
+  fetch(CATALYST_URL, {
     method: 'POST',
-    headers: {
-      'Authorization': 'Zoho-oauthtoken ' + API_TOKEN,
-      'Content-Type':  'application/json'
-    },
-    body: JSON.stringify({ data: data })
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
   })
   .then(function(r) { return r.json(); })
   .then(function(resp) {
     console.log('[saveToCreator] Response:', resp);
     if (resp.code === 3000) {
       showToast(sendEmail ? '✅ Saved! Email will be sent to ' + clientEmail : '✅ Report saved to Creator!', true);
-    } else if (resp.code === 1004 || resp.code === 1401) {
-      API_TOKEN = '';
-      localStorage.removeItem('zoho_api_token');
-      showToast('⚠️ Token expired — please re-enter.', false);
-      setTimeout(showTokenDialog, 600);
     } else {
-      showToast('⚠️ ' + (resp.message || JSON.stringify(resp).slice(0, 150)), false);
+      showToast('⚠️ ' + (resp.message || resp.error || JSON.stringify(resp).slice(0, 150)), false);
     }
   })
   .catch(function(err) {
