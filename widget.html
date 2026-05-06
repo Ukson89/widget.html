@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
 /* ===== DESIGN TOKENS ===== */
 :root, [data-theme="light"] {
@@ -323,6 +324,13 @@ select.input-field { padding-right: var(--space-8); background-image: url("data:
   .print-header h1 { font-size: 1.4rem; font-weight: 700; }
   .print-header p { font-size: 0.85rem; color: #666; }
   body { background: #fff; color: #000; }
+}
+.pdf-generating .no-print,
+.pdf-generating .app-header,
+.pdf-generating .btn-add-room,
+.pdf-generating .btn-remove { display: none !important; }
+.pdf-generating .print-header { display: block !important; margin-bottom: 1.5rem; }
+.pdf-generating body { background: #fff !important; color: #000 !important; }
   .card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
   .main { padding: 0; }
   [data-theme="dark"] { --color-bg: #fff; --color-surface: #fff; --color-surface-2: #f8f8f8; --color-surface-offset: #f0f0f0; --color-text: #000; --color-text-muted: #555; --color-primary: #01696f; --color-border: #ccc; --color-divider: #ddd; --color-primary-highlight: #e0f0f0; --color-success: #437a22; --color-success-highlight: #e8f5e0; }
@@ -359,7 +367,7 @@ select.input-field { padding-right: var(--space-8); background-image: url("data:
     </div>
   </div>
   <div class="header-actions">
-    <button class="btn-icon" onclick="window.print()" title="Print / Export PDF">
+    <button class="btn-icon no-print" onclick="downloadPDF()" title="Download PDF">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
     </button>
     <button class="btn-icon" data-theme-toggle title="Toggle dark/light mode">
@@ -869,6 +877,49 @@ function resetAll() {
   });
 })();
 
+// ===== PDF GENERATION =====
+function getPdfOptions(filename) {
+  return {
+    margin: [12, 10, 12, 10],
+    filename: filename || 'airflow-report.pdf',
+    image: { type: 'jpeg', quality: 0.88 },
+    html2canvas: { scale: 1.5, useCORS: true, logging: false, backgroundColor: '#ffffff' },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+}
+
+function getPdfElement() {
+  document.documentElement.setAttribute('data-theme', 'light');
+  document.body.classList.add('pdf-generating');
+  return document.querySelector('main') || document.body;
+}
+
+function downloadPDF() {
+  var client = document.getElementById('proj-client').value || 'Report';
+  var ref    = document.getElementById('proj-ref').value || '';
+  var fname  = (client + (ref ? '_' + ref : '') + '_Airflow.pdf').replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+  var el = getPdfElement();
+  showToast('Generating PDF…', true);
+  html2pdf().set(getPdfOptions(fname)).from(el).save()
+    .then(function() { document.body.classList.remove('pdf-generating'); })
+    .catch(function(e) { document.body.classList.remove('pdf-generating'); showToast('⚠️ PDF error: ' + e.message, false); });
+}
+
+function generatePdfBase64() {
+  return new Promise(function(resolve, reject) {
+    var el = getPdfElement();
+    html2pdf().set(getPdfOptions('report.pdf')).from(el).outputPdf('datauristring')
+      .then(function(uri) {
+        document.body.classList.remove('pdf-generating');
+        resolve(uri.split(',')[1]);
+      })
+      .catch(function(e) {
+        document.body.classList.remove('pdf-generating');
+        reject(e);
+      });
+  });
+}
+
 // ===== CATALYST SAVE =====
 var CATALYST_URL = 'https://zoho-solution-20112910787.catalystserverless.eu/airflow-save';
 var jobId = null;
@@ -968,18 +1019,24 @@ function saveToCreator(sendEmail) {
   if (jobId) data.job_id = jobId;
 
   console.log('[saveToCreator] Payload:', data);
-  showToast('Saving…', true);
+  showToast('Generating PDF…', true);
 
-  var formBody = new URLSearchParams();
-  formBody.append('data', JSON.stringify(data));
+  generatePdfBase64().then(function(pdfBase64) {
+    showToast('Saving…', true);
+    var formBody = new URLSearchParams();
+    formBody.append('data', JSON.stringify(data));
+    formBody.append('pdf', pdfBase64);
+    formBody.append('send_email', sendEmail ? '1' : '0');
+    formBody.append('client_email', clientEmail);
 
-  fetch(CATALYST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: formBody.toString()
-  })
-  .then(function(r) { return r.json(); })
+    return fetch(CATALYST_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody.toString()
+    });
+  }).then(function(r) { return r ? r.json() : null; })
   .then(function(resp) {
+    if (!resp) return;
     console.log('[saveToCreator] Response:', resp);
     if (resp.code === 3000) {
       showToast(sendEmail ? '✅ Saved! Email will be sent to ' + clientEmail : '✅ Report saved to Creator!', true);
@@ -989,8 +1046,7 @@ function saveToCreator(sendEmail) {
   })
   .catch(function(err) {
     console.error('[saveToCreator] Error:', err);
-    // CORS blocks reading the response but the request WAS sent and processed
-    if (err.message && (err.message.indexOf('fetch') !== -1 || err.message.indexOf('network') !== -1 || err.message.indexOf('CORS') !== -1 || err.message === 'Failed to fetch' || err.message === 'Load failed')) {
+    if (err.message && (err.message.indexOf('fetch') !== -1 || err.message.indexOf('network') !== -1 || err.message === 'Failed to fetch' || err.message === 'Load failed')) {
       showToast(sendEmail ? '✅ Sent! Check Creator to confirm.' : '✅ Saved! Check Creator to confirm.', true);
     } else {
       showToast('⚠️ ' + err.message, false);
